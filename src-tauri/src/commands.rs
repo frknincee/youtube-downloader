@@ -49,12 +49,11 @@ pub struct DownloadProgress {
 }
 
 fn find_ytdlp() -> String {
+    let home = std::env::var("HOME").unwrap_or_default();
     let paths = vec![
+        format!("{}/.pyenv/shims/yt-dlp", home),
+        format!("{}/.local/bin/yt-dlp", home),
         "yt-dlp".to_string(),
-        format!(
-            "{}/.local/bin/yt-dlp",
-            std::env::var("HOME").unwrap_or_default()
-        ),
         "/usr/local/bin/yt-dlp".to_string(),
         "/opt/homebrew/bin/yt-dlp".to_string(),
     ];
@@ -69,14 +68,15 @@ fn find_ytdlp() -> String {
         }
     }
 
-    "python3".to_string()
+    // Fallback: use pyenv python
+    format!("{}/.pyenv/shims/python3", home)
 }
 
 fn get_ytdlp_cmd() -> (String, Vec<String>) {
     let ytdlp = find_ytdlp();
-    if ytdlp == "python3" {
+    if ytdlp.ends_with("python3") {
         (
-            "python3".to_string(),
+            ytdlp,
             vec!["-m".to_string(), "yt_dlp".to_string()],
         )
     } else {
@@ -200,6 +200,16 @@ pub async fn download_video(
 ) -> Result<String, String> {
     let state: tauri::State<'_, DownloadState> = app.state::<DownloadState>();
     state.cancel_flag.store(false, Ordering::SeqCst);
+
+    // Expand ~ to home directory
+    let output_dir = if output_dir.starts_with("~/") {
+        let home = std::env::var("HOME").unwrap_or_default();
+        output_dir.replacen("~", &home, 1)
+    } else if output_dir == "~" {
+        std::env::var("HOME").unwrap_or_default()
+    } else {
+        output_dir
+    };
 
     let (cmd, mut base_args) = get_ytdlp_cmd();
 
